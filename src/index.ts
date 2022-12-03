@@ -1,5 +1,6 @@
 import { run01 } from "./01";
 import { run02 } from "./02";
+import { run03 } from "./03";
 
 const port = parseInt(process.env.PORT || "42069");
 if (isNaN(port)) {
@@ -9,6 +10,7 @@ if (isNaN(port)) {
 const solutions: Record<string, (port: number) => void> = {
   "01": run01,
   "02": run02,
+  "03": run03,
 };
 
 const arg = process.argv[2];
