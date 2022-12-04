@@ -28,3 +28,13 @@ export function group<T>(items: T[], groupSize: number): T[][] {
   });
   return r;
 }
+
+export function* inclusiveRange(
+  start: number,
+  end: number,
+  interval: number = 1
+) {
+  for (let i = start; i <= end; i += interval) {
+    yield i;
+  }
+}
