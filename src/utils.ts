@@ -34,7 +34,7 @@ export function* inclusiveRange(
   end: number,
   interval: number = 1
 ) {
-  for (let i = start; i <= end; i += interval) {
+  for (let i = Math.min(start, end); i <= Math.max(start, end); i += interval) {
     yield i;
   }
 }
