@@ -13,6 +13,7 @@ import { run12 } from "./12";
 import { run13 } from "./13";
 import { run14 } from "./14";
 import { run15 } from "./15";
+import { run16 } from "./16";
 
 const port = parseInt(process.env.PORT || "42069");
 if (isNaN(port)) {
@@ -35,6 +36,7 @@ const solutions: Record<string, (port: number) => void> = {
   "13": run13,
   "14": run14,
   "15": run15,
+  "16": run16,
 };
 
 const arg = process.argv[2];
