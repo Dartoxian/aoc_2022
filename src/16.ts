@@ -132,10 +132,90 @@ const part1 = (graph: FlowRateGraph) => {
 };
 
 const part2 = (graph: FlowRateGraph) => {
+  type WeightedFlowRateGraph = Record<
+    string,
+    { flowRate: number; leadsTo: { destination: string; cost: number }[] }
+  >;
+  const weightedGraph: WeightedFlowRateGraph = {};
+  for (const [valve, details] of Object.entries(graph)) {
+    if (details.flowRate === 0 && valve !== "AA") {
+      continue;
+    }
+    const leadsTo: { destination: string; cost: number }[] = [];
+    const destinationCosts: Record<string, number> = details.leadsTo.reduce(
+      (acc, d) => ({ ...acc, [d]: 1 }),
+      {}
+    );
+    const explored = new Set<string>();
+    explored.add(valve);
+    const exploreQueue = [...details.leadsTo];
+    while (exploreQueue.length > 0) {
+      const d = exploreQueue.shift();
+      if (explored.has(d)) {
+        continue;
+      }
+      explored.add(d);
+      if (graph[d].flowRate > 0) {
+        leadsTo.push({ destination: d, cost: destinationCosts[d] });
+      } else {
+        for (const d2 of graph[d].leadsTo) {
+          if (destinationCosts[d2] === undefined) {
+            destinationCosts[d2] = destinationCosts[d] + 1;
+            exploreQueue.push(d2);
+          }
+        }
+      }
+    }
+
+    weightedGraph[valve] = {
+      flowRate: details.flowRate,
+      leadsTo,
+    };
+  }
+  console.log(JSON.stringify(weightedGraph, undefined, 4));
+
+  type WeightedSolutionStep = {
+    flows: Record<string, number>;
+    // s starts at, e ends at, t steps remaining
+    workers: { s: string; e: string; t: number }[];
+  };
+
   // At minute Zero there is no flow at position AA
-  const solutionsAtMinute: SolutionStep[][] = [
-    [{ flows: { AA: 0 }, locations: ["AA", "AA"] }],
+  const solutionsAtMinute: WeightedSolutionStep[][] = [
+    [
+      {
+        flows: { AA: 0 },
+        workers: [
+          { s: "AA", e: "AA", t: 0 },
+          { s: "AA", e: "AA", t: 0 },
+        ],
+      },
+    ],
   ];
+
+  const solutionKey = (sol: WeightedSolutionStep): string => {
+    return JSON.stringify({
+      f: sol.flows,
+      w: sol.workers.map(({ s, e, t }) => `s:${s},e:${e},t:${t}`).sort(),
+    });
+  };
+
+  const removeDuplicatedWeightedSolutions = (
+    solutions: WeightedSolutionStep[]
+  ): WeightedSolutionStep[] => {
+    const seenSolutions = new Set<string>();
+    const keep: WeightedSolutionStep[] = [];
+    for (const sol of solutions) {
+      const k = solutionKey(sol);
+      if (seenSolutions.has(k)) {
+        continue;
+      }
+      seenSolutions.add(k);
+      keep.push(sol);
+    }
+    return keep;
+  };
+
   const seenStates = new Set<string>();
   for (const minute of inclusiveRange(1, 25)) {
     solutionsAtMinute[0]
@@ -145,8 +225,9 @@ const part2 = (graph: FlowRateGraph) => {
       minute - 1,
       solutionsAtMinute.map((l) => l.length).reduce((a, b) => a + b)
     );
+
     solutionsAtMinute[minute] = solutionsAtMinute[minute - 1].flatMap(
-      ({ flows, locations }) => {
+      ({ flows, workers }) => {
         const newTotalFlows = Object.entries(flows).reduce(
           (acc: Record<string, number>, [valve, flow]) => {
             acc[valve] = flow + graph[valve].flowRate;
@@ -154,24 +235,38 @@ const part2 = (graph: FlowRateGraph) => {
           },
           {}
         );
-        let r: SolutionStep[] = [{ flows: newTotalFlows, locations: [] }];
-        for (const location of locations) {
+        let r: WeightedSolutionStep[] = [{ flows: newTotalFlows, workers: [] }];
+        for (const oldWorker of workers) {
+          if (oldWorker.t > 1) {
+            // This worker is still travelling and there is nothing novel for it to do
+            r.forEach((s) =>
+              s.workers.push({ ...oldWorker, t: oldWorker.t - 1 })
+            );
+            continue;
+          }
+          // This worker is at a location, it can either move from there or open a valve
+          const worker = { s: oldWorker.e, e: oldWorker.e, t: 0 };
           const oldR = r;
           r = r.flatMap((s) =>
-            graph[location].leadsTo.map((destination) => ({
+            weightedGraph[worker.s].leadsTo.map((destination) => ({
               ...s,
-              locations: [...s.locations, destination].sort(),
+              workers: [
+                ...s.workers,
+                { ...worker, e: destination.destination, t: destination.cost },
+              ],
             }))
           );
-          if (flows[location] === undefined && graph[location].flowRate > 0) {
+          if (flows[worker.s] === undefined && graph[worker.s].flowRate > 0) {
             r.push(
-              ...oldR.map((oldS) => ({
-                flows: {
-                  ...oldS.flows,
-                  [location]: graph[location].flowRate,
-                },
-                locations: [...oldS.locations, location].sort(),
-              }))
+              ...oldR
+                .filter((oldS) => oldS.flows[worker.s] === undefined)
+                .map((oldS) => ({
+                  flows: {
+                    ...oldS.flows,
+                    [worker.s]: weightedGraph[worker.s].flowRate,
+                  },
+                  workers: [...oldS.workers, worker],
+                }))
             );
           }
         }
@@ -179,10 +274,27 @@ const part2 = (graph: FlowRateGraph) => {
         return r;
       }
     );
-    solutionsAtMinute[minute] = filterToBestSolutions(
-      solutionsAtMinute[minute],
-      graph
-    ).filter((sol) => !seenStates.has(JSON.stringify(sol)));
+    solutionsAtMinute[minute] = removeDuplicatedWeightedSolutions(
+      solutionsAtMinute[minute]
+    );
+    const scores: [WeightedSolutionStep, number][] = solutionsAtMinute[
+      minute
+    ].map((sol) => [sol, Object.values(sol.flows).reduce((a, b) => a + b)]);
+    const highestScore = scores
+      .map(([s, score]) => score)
+      .reduce((a, b) => (a > b ? a : b));
+    // discard bottom 70% of the scores
+    solutionsAtMinute[minute] = scores
+      .filter(([sol, score]) => score >= highestScore * 0.9 - 100)
+      .map(([sol]) => sol);
+
+    solutionsAtMinute[minute - 1] = [];
+    const allOpen = solutionsAtMinute[minute].find((sol) =>
+      Object.keys(weightedGraph).every((v) => sol.flows[v] || v === "AA")
+    );
+    if (allOpen) {
+      console.log("ALL OPEN");
+    }
   }
   console.log(
     solutionsAtMinute[25]
